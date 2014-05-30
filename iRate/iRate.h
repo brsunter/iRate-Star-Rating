@@ -47,10 +47,12 @@
 
 #if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
+
 #else
 #import <Cocoa/Cocoa.h>
 #endif
 
+#import <EDStarRating.h>
 
 extern NSUInteger const iRateAppStoreGameGenreID;
 extern NSString *const iRateErrorDomain;
@@ -92,11 +94,12 @@ typedef NS_ENUM(NSUInteger, iRateErrorCode)
 - (void)iRateUserDidRequestReminderToRateApp;
 - (BOOL)iRateShouldOpenAppStore;
 - (void)iRateDidOpenAppStore;
+- (void)gaveStarRating:(float)rating;
 
 @end
 
 
-@interface iRate : NSObject
+@interface iRate : NSObject<EDStarRatingProtocol>
 
 + (iRate *)sharedInstance;
 
@@ -148,6 +151,10 @@ typedef NS_ENUM(NSUInteger, iRateErrorCode)
 @property (nonatomic, readonly) BOOL ratedAnyVersion;
 @property (nonatomic, weak_delegate) id<iRateDelegate> delegate;
 
+//star double prompt rating
+@property (nonatomic, assign) BOOL shouldShowStarRatingPrompt;
+@property (nonatomic, copy) NSString* starRatingMessage;
+@property (nonatomic, assign) float minimumStarsToRate;
 //manually control behaviour
 - (BOOL)shouldPromptForRating;
 - (void)promptForRating;
