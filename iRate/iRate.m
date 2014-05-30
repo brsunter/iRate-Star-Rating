@@ -32,8 +32,8 @@
 
 
 #import "iRate.h"
-
-
+#import <LMAlertView.h>
+#import <MessageUI/MessageUI.h>
 #import <Availability.h>
 #if !__has_feature(objc_arc)
 #error This class requires automatic reference counting
@@ -71,7 +71,6 @@ static NSString *const iRateiOSAppStoreURLFormat = @"itms-apps://itunes.apple.co
 static NSString *const iRateiOS7AppStoreURLFormat = @"itms-apps://itunes.apple.com/app/id%@";
 static NSString *const iRateMacAppStoreURLFormat = @"macappstore://itunes.apple.com/app/id%@";
 
-
 #define SECONDS_IN_A_DAY 86400.0
 #define SECONDS_IN_A_WEEK 604800.0
 #define MAC_APP_STORE_REFRESH_DELAY 5.0
@@ -89,6 +88,7 @@ static NSString *const iRateMacAppStoreURLFormat = @"macappstore://itunes.apple.
 - (void)iRateUserDidRequestReminderToRateApp {}
 - (BOOL)iRateShouldOpenAppStore { return YES; }
 - (void)iRateDidOpenAppStore {}
+- (void)gaveStarRating:(float)rating {};
 
 @end
 
@@ -99,7 +99,8 @@ static NSString *const iRateMacAppStoreURLFormat = @"macappstore://itunes.apple.
 @property (nonatomic, assign) int previousOrientation;
 @property (nonatomic, assign) BOOL checkingForPrompt;
 @property (nonatomic, assign) BOOL checkingForAppStoreID;
-
+@property LMAlertView* starRatingAlertView;
+@property float starRating;
 @end
 
 
@@ -210,6 +211,9 @@ static NSString *const iRateMacAppStoreURLFormat = @"macappstore://itunes.apple.
         self.remindPeriod = 1.0f;
         self.verboseLogging = NO;
         self.previewMode = NO;
+        self.shouldShowStarRatingPrompt=NO;
+        self.starRatingMessage = @"What would you rate this app?";
+        self.minimumStarsToRate = 3;
         
 #if DEBUG
         
@@ -620,8 +624,13 @@ static NSString *const iRateMacAppStoreURLFormat = @"macappstore://itunes.apple.
         }
         
         //prompt user
-        [self promptForRating];
-    }
+        if (self.shouldShowStarRatingPrompt) {
+            [self promptForStarRating];
+        }
+        else {
+            [self promptForRating];
+        }
+        }
 }
 
 - (void)connectionError:(NSError *)error
@@ -852,6 +861,45 @@ static NSString *const iRateMacAppStoreURLFormat = @"macappstore://itunes.apple.
         [self.delegate iRateDidPromptForRating];
     }
 }
+- (void)promptForStarRating
+{
+    self.starRatingAlertView = [[LMAlertView alloc] initWithTitle:self.starRatingMessage message:nil delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"Rate", nil];
+    CGSize size = self.starRatingAlertView.size;
+    LMModalItemTableViewCell * cell = [self.starRatingAlertView buttonCellForIndex:self.starRatingAlertView.firstOtherButtonIndex];
+
+    [self.starRatingAlertView setSize:CGSizeMake(size.width, 152.0)];
+//    alert.tag = kPreRatingAlertViewTag;
+    UIView * contentView = self.starRatingAlertView.contentView;
+
+    EDStarRating * starRatingView = [[EDStarRating alloc] initWithFrame:CGRectMake((size.width / 2.0 - 190.0 / 2.0), 55.0, 190.0, 50.0)];
+
+    starRatingView.starImage = [UIImage imageNamed:@"StarEmpty"];
+    starRatingView.starHighlightedImage = [UIImage imageNamed:@"StarFull"];
+    starRatingView.maxRating = 5.0;
+    starRatingView.delegate = self;
+    starRatingView.horizontalMargin = 12.0;
+    starRatingView.editable = YES;
+    starRatingView.displayMode = EDStarRatingDisplayFull;
+    starRatingView.rating = 0;
+    starRatingView.backgroundColor = [UIColor clearColor];
+    cell.isEnabled = NO;
+    [contentView addSubview:starRatingView];
+    [self.starRatingAlertView show];
+}
+
+- (void)starsSelectionChanged:(EDStarRating *)control rating:(float)rating
+{
+    LMModalItemTableViewCell * cell = [self.starRatingAlertView buttonCellForIndex:self.starRatingAlertView.firstOtherButtonIndex];
+    if (rating == 0) {
+        cell.isEnabled = NO;
+    }
+    else {
+        cell.isEnabled = YES;
+        cell.textLabel.textColor = [UIColor blackColor];
+        cell.textLabel.font = [UIFont boldSystemFontOfSize:17];
+    }
+    self.starRating = rating;
+}
 
 - (void)applicationLaunched
 {
@@ -1020,20 +1068,33 @@ static NSString *const iRateMacAppStoreURLFormat = @"macappstore://itunes.apple.
 
 - (void)alertView:(UIAlertView *)alertView didDismissWithButtonIndex:(NSInteger)buttonIndex
 {
-    if (buttonIndex == alertView.cancelButtonIndex)
-    {
-        [self declineThisVersion];
+    if ((LMAlertView*)alertView == self.starRatingAlertView) {
+        if (buttonIndex == 0) {
+            [self declineThisVersion];
+        }
+        else {
+            if (self.starRating >= self.minimumStarsToRate) {
+                [self promptForRating];
+            }
+            else {
+                [self declineThisVersion];
+            }
+            [self.delegate gaveStarRating:self.starRating];
+
+        }
     }
-    else if (([self.cancelButtonLabel length] && buttonIndex == 2) ||
-             ([self.cancelButtonLabel length] == 0 && buttonIndex == 1))
-    {
-        [self remindLater];
+    else {
+        if (buttonIndex == alertView.cancelButtonIndex) {
+            [self declineThisVersion];
+        }
+        else if (([self.cancelButtonLabel length] && buttonIndex == 2) ||
+                 ([self.cancelButtonLabel length] == 0 && buttonIndex == 1)) {
+            [self remindLater];
+        }
+        else {
+            [self rate];
+        }
     }
-    else
-    {
-        [self rate];
-    }
-    
     //release alert
     self.visibleAlert = nil;
 }
@@ -1120,7 +1181,6 @@ static NSString *const iRateMacAppStoreURLFormat = @"macappstore://itunes.apple.
 {
     //ignore this version
     self.declinedThisVersion = YES;
-
     //log event
     [self.delegate iRateUserDidDeclineToRateApp];
 }
